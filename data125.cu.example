@@ -1,0 +1,10 @@
+#define STATE_N 2
+#define NODE_N 5
+#define DATA_N 5
+int data[] = {
+   1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1,
+   1, 1, 1, 1, 1,
+};

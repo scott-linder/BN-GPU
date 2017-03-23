@@ -151,7 +151,9 @@ int main()
     }//endwhile
 
 
-    cudaFreeHost(localscore);
+    /*
+       cudaFreeHost(localscore);
+       */
     cudaFree(D_localscore);
     cudaFree(D_parent);
     
@@ -234,7 +236,15 @@ void initial(){
     sizepernode=tmp;
     tmp*=NODE_N;
 
-    cudaMallocHost((void**)&localscore,tmp*sizeof(float));
+    /*
+    printf("about to alloc: %d\n", tmp*sizeof(float));
+    cudaError_t code = cudaMallocHost((void**)&localscore,tmp*sizeof(float));
+    if (code != cudaSuccess) {
+       fprintf(stderr, "Error: %s\n", cudaGetErrorString(code));
+       exit(1);
+    }
+    */
+    localscore = (float *)malloc(tmp*sizeof(float));
 
     for(i=0;i<tmp;i++)
         localscore[i]=0;
@@ -326,7 +336,6 @@ void genScore(){
 	  dim3 threads(256,1,1);
 
     Pre_logGamma();
-    cudaPrintfInit();
 	  cudaMalloc((void**)&D_data,NODE_N*DATA_N*sizeof(int));
 	  cudaMalloc((void**)&D_localscore,NODE_N*sizepernode*sizeof(float));
     cudaMalloc((void**)&D_LG,(DATA_N+2)*sizeof(float));
@@ -338,16 +347,18 @@ void genScore(){
 
     cudaMemcpy(localscore,D_localscore,NODE_N*sizepernode*sizeof(float),cudaMemcpyDeviceToHost);
 
-    cudaPrintfDisplay(stdout, true);
-    cudaPrintfEnd();
 
     cudaFreeHost(LG);
     cudaFree(D_LG);
     cudaFree(D_data);
 
 
+    /*
     cudaMallocHost((void**)&scores,(sizepernode/(256*taskperthr) + 1)*sizeof(float));
     cudaMallocHost((void**)&parents,(sizepernode/(256*taskperthr) + 1)*4*sizeof(int));
+    */
+    scores = (float *)malloc((sizepernode/(256*taskperthr) + 1)*sizeof(float));
+    parents = (int *)malloc((sizepernode/(256*taskperthr) + 1)*4*sizeof(int));
     cudaMalloc((void**)&D_Score,(sizepernode/(256*taskperthr) + 1)*sizeof(float));
 		cudaMalloc((void**)&D_parent,NODE_N*sizeof(bool));
     cudaMalloc((void**)&D_resP,(sizepernode/(256*taskperthr) + 1)*4*sizeof(int));
@@ -372,7 +383,10 @@ int convert(int *parent,int parN){
 
 void Pre_logGamma(){
 
+   /*
     cudaMallocHost((void**)&LG,(DATA_N+2)*sizeof(float));
+    */
+   LG = (float *)malloc((DATA_N+2)*sizeof(float));
 
     LG[1]=log(1.0);
     float i;

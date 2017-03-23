@@ -36,7 +36,7 @@
 include ./findcudalib.mk
 
 # Location of the CUDA Toolkit
-CUDA_PATH ?= "/usr/local/cuda-6.0"
+CUDA_PATH ?= "/opt/cuda"
 
 # internal flags
 NVCCFLAGS   := -m${OS_SIZE}
@@ -78,7 +78,6 @@ LDFLAGS += -rpath-link=$(TARGET_FS)/usr/lib/arm-linux-$(abi)
 endif
 endif
 
-# Debug build flags
 ifeq ($(dbg),1)
       NVCCFLAGS += -g -G
       TARGET := debug
@@ -100,18 +99,13 @@ ALL_LDFLAGS += $(EXTRA_NVCCLDFLAGS)
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 
 # Common includes and paths for CUDA
-INCLUDES  := -I/home/yuwang/NVIDIA_CUDA-6.0_Samples/NVIDIA_CUDA-6.0_Samples/common/inc
+INCLUDES  :=
 LIBRARIES :=
 
 ################################################################################
 
 # CUDA code generation flags
-ifneq ($(OS_ARCH),armv7l)
-GENCODE_SM10    := -gencode arch=compute_10,code=sm_10
-endif
-GENCODE_SM20    := -gencode arch=compute_20,code=sm_20
-GENCODE_SM30    := -gencode arch=compute_30,code=sm_30 -gencode arch=compute_35,code=\"sm_35,compute_35\"
-GENCODE_FLAGS   := $(GENCODE_SM10) $(GENCODE_SM20) $(GENCODE_SM30)
+GENCODE_FLAGS   := -gencode arch=compute_30,code=sm_30
 
 ################################################################################
 
@@ -119,19 +113,13 @@ GENCODE_FLAGS   := $(GENCODE_SM10) $(GENCODE_SM20) $(GENCODE_SM30)
 all: build
 
 build: ordergraph
-ordergraph.o: ordergraph.cu ordergraph_kernel.cu
-	$(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
-	
-ordergraph: ordergraph.o
-	$(NVCC) $(ALL_LDFLAGS) -o $@ $+ $(LIBRARIES)
-	mkdir -p /home/yuwang/NVIDIA_CUDA-6.0_Samples/NVIDIA_CUDA-6.0_Samples/bin/$(OS_ARCH)/$(OSLOWER)/$(TARGET)$(if $(abi),/$(abi))
-	cp $@ /home/yuwang/NVIDIA_CUDA-6.0_Samples/NVIDIA_CUDA-6.0_Samples/bin/$(OS_ARCH)/$(OSLOWER)/$(TARGET)$(if $(abi),/$(abi))
+ordergraph: ordergraph.cu ordergraph_kernel.cu
+	$(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ $<
 
 run: build
 	./ordergraph
 
 clean:
-	rm -f ordergraph ordergraph.o *.bin
-	rm -rf /home/yuwang/NVIDIA_CUDA-6.0_Samples/NVIDIA_CUDA-6.0_Samples/bin/$(OS_ARCH)/$(OSLOWER)/$(TARGET)$(if $(abi),/$(abi))/ordergraph
+	rm -f ordergraph
 
 clobber: clean
