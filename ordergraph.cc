@@ -4,14 +4,12 @@
 #include <math.h>
 #include <float.h>
 #include <time.h>
-#include <cuda_runtime.h>
 #include "data.h"
-#include "ordergraph_kernel.cu"
 
 const int HIGHEST = 3;
 int taskperthr = 1;
 int sizepernode;
-int ITER = 100;
+int ITER = 1;
 
 // global var
 float preScore = FLT_MIN;
@@ -26,6 +24,7 @@ float *localscore, *D_localscore, *D_Score, *scores;
 float *LG;
 bool *D_parent;
 int *D_resP, *parents;
+int *D_data;
 
 void initialize();			//initial orders and data
 int genOrders();		//swap
@@ -44,13 +43,21 @@ void Pre_logGamma();
 int findindex(int *arr, int size);
 int C(int n, int a);
 
+void genScoreKernel(int sizepernode, float *D_localscore, int *D_data, float *D_LG);
+void Dincr(int *bit, int n);
+void DincrS(int *bit, int n);
+bool D_getState(int parN, int *sta, int time);
+void D_findComb(int *comb, int l, int n);
+int D_findindex(int *arr, int size);
+int D_C(int n, int a);
+
 
 int main()
 {
 	int c = 0;
 	clock_t total = 0, start;
 
-	cudaDeviceSynchronize();
+	//cudaDeviceSynchronize();
 	srand(time(NULL));
 
 	start = clock();
@@ -130,13 +137,13 @@ int main()
 	}
 
 	free(localscore);
-	cudaFree(D_localscore);
-	cudaFree(D_parent);
+	//cudaFree(D_localscore);
+	//cudaFree(D_parent);
 
 	free(scores);
 	free(parents);
-	cudaFree(D_Score);
-	cudaFree(D_resP);
+	//cudaFree(D_Score);
+	//cudaFree(D_resP);
 
 	printf("%d,%d,%d,%f\n", STATE_N, NODE_N, DATA_N, (float) total / CLOCKS_PER_SEC);
 }
@@ -221,6 +228,9 @@ void initialize()
 			preOrders[i][j] = orders[i][j];
 		}
 	}
+
+	D_data = (int *)malloc(DATA_N * NODE_N * sizeof(int));
+	memcpy(D_data, data, DATA_N * NODE_N * sizeof(int));
 }
 
  //generate ramdom order
@@ -272,32 +282,18 @@ int conCore(float score)
 
 void genScore()
 {
-	int *D_data;
-	float *D_LG;
-	dim3 grid(sizepernode / 256 + 1, 1, 1);
-	dim3 threads(256, 1, 1);
-
 	Pre_logGamma();
-	cudaMalloc((void **)&D_data, NODE_N * DATA_N * sizeof(int));
-	cudaMalloc((void **)&D_localscore, NODE_N * sizepernode * sizeof(float));
-	cudaMalloc((void **)&D_LG, (DATA_N + 2) * sizeof(float));
-	cudaMemset(D_localscore, 0.0, NODE_N * sizepernode * sizeof(float));
-	cudaMemcpy(D_data, data, NODE_N * DATA_N * sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(D_LG, LG, (DATA_N + 2) * sizeof(float), cudaMemcpyHostToDevice);
+	memset(localscore, 0.0, NODE_N * sizepernode * sizeof(float));
 
-	genScoreKernel <<< grid, threads >>> (sizepernode, D_localscore, D_data, D_LG);
+	genScoreKernel(sizepernode, localscore, D_data, LG);
 
-	cudaMemcpy(localscore, D_localscore, NODE_N * sizepernode * sizeof(float), cudaMemcpyDeviceToHost);
-
-	cudaFreeHost(LG);
-	cudaFree(D_LG);
-	cudaFree(D_data);
+	free(LG);
 
 	scores = (float *)malloc((sizepernode / (256 * taskperthr) + 1) * sizeof(float));
 	parents = (int *)malloc((sizepernode / (256 * taskperthr) + 1) * 4 * sizeof(int));
-	cudaMalloc((void **)&D_Score, (sizepernode / (256 * taskperthr) + 1) * sizeof(float));
-	cudaMalloc((void **)&D_parent, NODE_N * sizeof(bool));
-	cudaMalloc((void **)&D_resP, (sizepernode / (256 * taskperthr) + 1) * 4 * sizeof(int));
+	D_Score = (float *)malloc((sizepernode / (256 * taskperthr) + 1) * sizeof(float));
+	D_parent = (bool *)malloc(NODE_N * sizeof(bool));
+	D_resP = (int *)malloc((sizepernode / (256 * taskperthr) + 1) * 4 * sizeof(int));
 
 }
 
@@ -424,85 +420,12 @@ float findBestGraph()
 			}
 		}
 
-		if (posN >= 0) {
-			total = C(posN, 4) + C(posN, 3) + C(posN, 2) + posN + 1;
-			taskperthr = 1;
-			blocknum = total / (256 * taskperthr) + 1;
-
-			cudaMemset(D_resP, 0, blocknum * 4 * sizeof(int));
-			cudaMemset(D_Score, FLT_MIN, blocknum * sizeof(float));
-			cudaMemcpy(D_parent, orders[node], NODE_N * sizeof(bool), cudaMemcpyHostToDevice);
-
-			computeKernel <<< blocknum, 256, 256 * sizeof(float) >>> (taskperthr, sizepernode, D_localscore, D_parent, node, total, D_Score, D_resP);
-			cudaMemcpy(parents, D_resP, blocknum * 4 * sizeof(int), cudaMemcpyDeviceToHost);
-			cudaMemcpy(scores, D_Score, blocknum * sizeof(float), cudaMemcpyDeviceToHost);
-
-			for (i = 0; i < blocknum; i++) {
-
-				if (scores[i] > bestls) {
-
-					bestls = scores[i];
-
-					parN = 0;
-					for (tmp = 0; tmp < 4; tmp++) {
-						if (parents[i * 4 + tmp] < 0)
-							break;
-
-						bestparent[tmp] = parents[i * 4 + tmp];
-
-						parN++;
-					}
-
-					bestpN = parN;
-				}
-			}
-		} else {
-			if (posN >= 4) {
-				for (i = 0; i < posN; i++) {
-					for (j = i + 1; j < posN; j++) {
-						for (k = j + 1; k < posN; k++) {
-							for (l = k + 1; l < posN; l++) {
-								parN = 4;
-								if (pre[i] > node)
-									parent[1] = pre[i];
-								else
-									parent[1] = pre[i] + 1;
-								if (pre[j] > node)
-									parent[2] = pre[j];
-								else
-									parent[2] = pre[j] + 1;
-								if (pre[k] > node)
-									parent[3] = pre[k];
-								else
-									parent[3] = pre[k] + 1;
-								if (pre[l] > node)
-									parent[4] = pre[l];
-								else
-									parent[4] = pre[l] + 1;
-
-								index = findindex(parent, parN);
-								index += sizepernode * node;
-								ls = localscore[index];
-
-								if (ls > bestls) {
-									bestls = ls;
-									bestpN = parN;
-									for (tmp = 0; tmp < parN; tmp++)
-										bestparent[tmp] = parent[tmp + 1];
-								}
-
-							}
-						}
-					}
-				}
-			}
-
-			if (posN >= 3) {
-				for (i = 0; i < posN; i++) {
-					for (j = i + 1; j < posN; j++) {
-						for (k = j + 1; k < posN; k++) {
-
-							parN = 3;
+		if (posN >= 4) {
+			for (i = 0; i < posN; i++) {
+				for (j = i + 1; j < posN; j++) {
+					for (k = j + 1; k < posN; k++) {
+						for (l = k + 1; l < posN; l++) {
+							parN = 4;
 							if (pre[i] > node)
 								parent[1] = pre[i];
 							else
@@ -515,6 +438,10 @@ float findBestGraph()
 								parent[3] = pre[k];
 							else
 								parent[3] = pre[k] + 1;
+							if (pre[l] > node)
+								parent[4] = pre[l];
+							else
+								parent[4] = pre[l] + 1;
 
 							index = findindex(parent, parN);
 							index += sizepernode * node;
@@ -531,12 +458,14 @@ float findBestGraph()
 					}
 				}
 			}
+		}
 
-			if (posN >= 2) {
-				for (i = 0; i < posN; i++) {
-					for (j = i + 1; j < posN; j++) {
+		if (posN >= 3) {
+			for (i = 0; i < posN; i++) {
+				for (j = i + 1; j < posN; j++) {
+					for (k = j + 1; k < posN; k++) {
 
-						parN = 2;
+						parN = 3;
 						if (pre[i] > node)
 							parent[1] = pre[i];
 						else
@@ -545,6 +474,10 @@ float findBestGraph()
 							parent[2] = pre[j];
 						else
 							parent[2] = pre[j] + 1;
+						if (pre[k] > node)
+							parent[3] = pre[k];
+						else
+							parent[3] = pre[k] + 1;
 
 						index = findindex(parent, parN);
 						index += sizepernode * node;
@@ -560,15 +493,21 @@ float findBestGraph()
 					}
 				}
 			}
+		}
 
-			if (posN >= 1) {
-				for (i = 0; i < posN; i++) {
+		if (posN >= 2) {
+			for (i = 0; i < posN; i++) {
+				for (j = i + 1; j < posN; j++) {
 
-					parN = 1;
+					parN = 2;
 					if (pre[i] > node)
 						parent[1] = pre[i];
 					else
 						parent[1] = pre[i] + 1;
+					if (pre[j] > node)
+						parent[2] = pre[j];
+					else
+						parent[2] = pre[j] + 1;
 
 					index = findindex(parent, parN);
 					index += sizepernode * node;
@@ -579,22 +518,45 @@ float findBestGraph()
 						bestpN = parN;
 						for (tmp = 0; tmp < parN; tmp++)
 							bestparent[tmp] = parent[tmp + 1];
-
 					}
+
 				}
 			}
-
-			parN = 0;
-			index = sizepernode * node;
-
-			ls = localscore[index];
-
-			if (ls > bestls) {
-				bestls = ls;
-				bestpN = 0;
-			}
-
 		}
+
+		if (posN >= 1) {
+			for (i = 0; i < posN; i++) {
+
+				parN = 1;
+				if (pre[i] > node)
+					parent[1] = pre[i];
+				else
+					parent[1] = pre[i] + 1;
+
+				index = findindex(parent, parN);
+				index += sizepernode * node;
+				ls = localscore[index];
+
+				if (ls > bestls) {
+					bestls = ls;
+					bestpN = parN;
+					for (tmp = 0; tmp < parN; tmp++)
+						bestparent[tmp] = parent[tmp + 1];
+
+				}
+			}
+		}
+
+		parN = 0;
+		index = sizepernode * node;
+
+		ls = localscore[index];
+
+		if (ls > bestls) {
+			bestls = ls;
+			bestpN = 0;
+		}
+
 		if (bestls > FLT_MIN) {
 
 			for (i = 0; i < bestpN; i++) {
@@ -632,6 +594,195 @@ int findindex(int *arr, int size)
 }
 
 int C(int n, int a)
+{
+	int i, res = 1, atmp = a;
+
+	for (i = 0; i < atmp; i++) {
+		res *= n;
+		n--;
+	}
+
+	for (i = 0; i < atmp; i++) {
+		res /= a;
+		a--;
+	}
+
+	return res;
+}
+void genScoreKernel(int sizepernode, float *D_localscore, int *D_data, float *D_LG)
+{
+	for (int id = 0; id < sizepernode; id++) {
+
+		int node, index;
+		bool flag;
+		int parent[5] = { 0 };
+		int pre[NODE_N] = { 0 };
+		int state[5] = { 0 };
+		int i, j, parN = 0, tmp, t;
+		int t1 = 0, t2 = 0;
+		float ls = 0;
+		int Nij[STATE_N] = { 0 };
+
+		D_findComb(parent, id, NODE_N - 1);
+
+		for (i = 0; i < 4; i++) {
+			if (parent[i] > 0)
+				parN++;
+		}
+
+		for (node = 0; node < NODE_N; node++) {
+
+			j = 1;
+			for (i = 0; i < NODE_N; i++) {
+				if (i != node)
+					pre[j++] = i;
+
+			}
+
+			for (tmp = 0; tmp < parN; tmp++)
+				state[tmp] = 0;
+
+			index = sizepernode * node + id;
+
+			t = 0;
+			while (D_getState(parN, state, t++)) {	// for get state
+
+				ls = 0;
+				for (tmp = 0; tmp < STATE_N; tmp++)
+					Nij[tmp] = 0;
+
+				for (t1 = 0; t1 < DATA_N; t1++) {
+					flag = true;
+					for (t2 = 0; t2 < parN; t2++) {
+						if (D_data[t1 * NODE_N + pre[parent[t2]]] != state[t2]) {
+							flag = false;
+							break;
+						}
+					}
+					if (!flag)
+						continue;
+
+					Nij[D_data[t1 * NODE_N + node]]++;
+
+				}
+
+				tmp = STATE_N - 1;
+
+				for (t1 = 0; t1 < STATE_N; t1++) {
+					ls += D_LG[Nij[t1]];
+					tmp += Nij[t1];
+				}
+
+				ls -= D_LG[tmp];
+				ls += D_LG[STATE_N - 1];
+
+				D_localscore[index] += ls;
+
+			}
+
+		}
+
+	}
+}
+
+void Dincr(int *bit, int n)
+{
+
+	while (n <= NODE_N) {
+		bit[n]++;
+		if (bit[n] >= 2) {
+			bit[n] = 0;
+			n++;
+		} else {
+			break;
+		}
+	}
+
+	return;
+}
+
+void DincrS(int *bit, int n)
+{
+
+	bit[n]++;
+	if (bit[n] >= STATE_N) {
+		bit[n] = 0;
+		Dincr(bit, n + 1);
+	}
+
+	return;
+}
+
+bool D_getState(int parN, int *sta, int time)
+{
+	int i, j = 1;
+
+	for (i = 0; i < parN; i++) {
+		j *= STATE_N;
+	}
+	j--;
+	if (time > j)
+		return false;
+
+	if (time >= 1)
+		DincrS(sta, 0);
+
+	return true;
+
+}
+
+void D_findComb(int *comb, int l, int n)
+{
+	const int len = 4;
+	if (l == 0) {
+		for (int i = 0; i < len; i++)
+			comb[i] = -1;
+		return;
+	}
+	int sum = 0;
+	int k = 1;
+
+	while (sum < l)
+		sum += D_C(n, k++);
+	l -= sum - D_C(n, --k);
+	int low = 0;
+	int pos = 0;
+	while (k > 1) {
+		sum = 0;
+		int s = 1;
+		while (sum < l)
+			sum += D_C(n - s++, k - 1);
+		l -= sum - D_C(n - (--s), --k);
+		low += s;
+		comb[pos++] = low;
+		n -= s;
+	}
+	comb[pos] = low + l;
+	for (int i = pos + 1; i < 4; i++)
+		comb[i] = -1;
+}
+
+int D_findindex(int *arr, int size)
+{				//reminder: arr[0] has to be 0 && size == array size-1 && index start from 0
+	int i, j, index = 0;
+
+	for (i = 1; i < size; i++) {
+		index += D_C(NODE_N - 1, i);
+	}
+
+	for (i = 1; i <= size - 1; i++) {
+		for (j = arr[i - 1] + 1; j <= arr[i] - 1; j++) {
+			index += D_C(NODE_N - 1 - j, size - i);
+		}
+	}
+
+	index += arr[size] - arr[size - 1];
+
+	return index;
+
+}
+
+int D_C(int n, int a)
 {
 	int i, res = 1, atmp = a;
 

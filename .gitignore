@@ -1,5 +1,6 @@
-ordergraph
-data.cu
+ordergraph_gpp
+ordergraph_gpu
+data.h
 data.json
 data.wppl
 node_modules/

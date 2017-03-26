@@ -1,6 +1,6 @@
 #ifndef _ORDERGRAPH_KERNEL_H_
 #define _ORDERGRAPH_KERNEL_H_
-#include "data.cu"
+#include "data.h"
 
 __device__ void Dincr(int *bit, int n);
 __device__ void DincrS(int *bit, int n);
