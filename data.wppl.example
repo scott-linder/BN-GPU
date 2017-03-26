@@ -1,0 +1,13 @@
+// vim: ft=javascript
+
+var model = function(prevBlock, isFirst) {
+    var c = flip(0.5);
+    var b = c ? flip(0.7) : flip(0.5);
+    var d = b ? flip(0.9) : flip(0.6);
+    var e = d ? flip(0.6) : flip(0.5);
+    var f = (e || c) ? flip(0.8) : flip(0.5);
+    return { c:c, b:b, d:d, e:e , f:f }
+};
+
+var dist = Infer({ method: 'MCMC', model: model });
+json.write('data.json', repeat(600, function () { sample(dist) }));
