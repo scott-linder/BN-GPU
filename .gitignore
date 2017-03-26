@@ -1,4 +1,2 @@
 ordergraph
-ordergraph.o
-data125.cu
-*.out
+data.cu

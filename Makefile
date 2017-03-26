@@ -8,4 +8,4 @@ ordergraph: ordergraph.cu
 
 .PHONY: clean
 clean:
-	rm -f ordergraph *.out
+	rm -f ordergraph
