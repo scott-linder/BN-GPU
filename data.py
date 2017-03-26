@@ -12,6 +12,6 @@ print('#define DATA_N {}'.format(len(samples)))
 print('#define NODE_N {}'.format(len(samples[0])))
 print('int data[] = {')
 for sample in samples:
-    print(','.join(map(lambda b: str(int(b)), sample.values())) + ',')
+    print(','.join(map(lambda b: str(int(b)), sample)) + ',')
 print('};')
 print('#endif')

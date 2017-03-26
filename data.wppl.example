@@ -1,12 +1,12 @@
 // vim: ft=javascript
 
 var model = function(prevBlock, isFirst) {
-    var c = flip(0.5);
-    var b = c ? flip(0.7) : flip(0.5);
-    var d = b ? flip(0.9) : flip(0.6);
-    var e = d ? flip(0.6) : flip(0.5);
-    var f = (e || c) ? flip(0.8) : flip(0.5);
-    return { c:c, b:b, d:d, e:e , f:f }
+    var a = flip(0.5);
+    var b = a ? flip(0.7) : flip(0.5);
+    var c = b ? flip(0.9) : flip(0.6);
+    var d = c ? flip(0.6) : flip(0.5);
+    var e = (d || a) ? flip(0.8) : flip(0.5);
+    return [ a, b, c, d, e ]
 };
 
 var dist = Infer({ method: 'MCMC', model: model });
