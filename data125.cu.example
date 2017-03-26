@@ -1,4 +1,4 @@
-#define STATE_N 2
+#define STATE_N 4
 #define NODE_N 5
 #define DATA_N 5
 int data[] = {
