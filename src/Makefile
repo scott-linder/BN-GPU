@@ -15,18 +15,6 @@ ordergraph_gpp: ordergraph.cc data.h
 ordergraph_gpu: ordergraph.cu ordergraph_kernel.cu data.h
 	$(NVCC) $(NVCFLAGS) -o $@ $<
 
-node_modules:
-	mkdir -p node_modules
-
-node_modules/webppl-json: node_modules
-	cd node_modules; git clone https://github.com/stuhlmueller/webppl-json
-
-data.json: data.wppl node_modules/webppl-json
-	webppl data.wppl --require webppl-json
-
-data.h: data.json
-	./data.py >$@
-
 .PHONY: clean
 clean:
-	rm -f ordergraph{_gpp,gpu} data.{json,h}
+	rm -f ordergraph_gpu ordergraph_gpp
